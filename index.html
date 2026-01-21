@@ -1,48 +1,45 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>選択問題メーカー</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .animate-fade-in-up {
-            animation: fadeInUp 0.5s ease-out;
-        }
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>選択問題メーカー</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .animate-fade-in-up { animation: fadeInUp 0.5s ease-out; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8">
 
-    <div id="app" class="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden min-h-[600px]">
-        <!-- コンテンツはJavaScriptによってここに描画されます -->
-    </div>
+  <div id="app" class="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden min-h-[600px]"></div>
 
-    <script>
-        // --- アプリの状態管理 ---
-        const state = {
-            jsonInput: '',
-            quizData: null,
-            gameState: 'input', // input, playing, result
-            currentQuestionIndex: 0,
-            score: 0,
-            showExplanation: false,
-            selectedOption: null,
-            isCorrect: null,
-            errorMessage: '',
-            currentShuffledOptions: []
-        };
+  <script>
+    // --- アプリの状態管理 ---
+    const state = {
+      jsonInput: '',
+      quizData: null,
+      gameState: 'input', // input, playing, result
+      currentQuestionIndex: 0,
+      score: 0,
+      showExplanation: false,
+      selectedOption: null,
+      isCorrect: null,
+      errorMessage: '',
+      currentShuffledOptions: []
+    };
 
-        // --- サンプルデータ ---
-        const sampleJson = `{
+    // --- サンプルデータ ---
+    // 1) 従来形式（このアプリの標準）
+    const sampleJson = `{
   "quiz_data": [
     {
       "question": "１日は何時間ですか？",
@@ -51,328 +48,450 @@
       "explanation": "1日は24時間です。"
     },
     {
-      "question": "信号機の「止まれ」は何色ですか？",
+      "question": "信号機の『止まれ』は何色ですか？",
       "options": ["青", "黄", "赤"],
       "answer": "赤",
-      "explanation": "道路交通法において、赤色は「止まれ」を意味します。"
-    },
-    {
-      "question": "世界で一番高い山は？",
-      "options": ["K2", "富士山", "チョモランマ", "キリマンジャロ"],
-      "answer": "チョモランマ",
-      "explanation": "チョモランマ（エベレスト）の標高は約8,848メートルです。"
+      "explanation": "赤色は『止まれ』を意味します。"
     }
   ]
 }`;
 
-        // --- 初期化 ---
-        function init() {
-            state.jsonInput = sampleJson;
-            render();
+    // 2) GPT出力でよくある形式（対応済み）
+    //    - items（または questions / data / 直配列）
+    //    - q / choices / answerIndex / category / passage を受け付け
+    const sampleJson2 = `{
+  "items": [
+    {
+      "category": "語彙",
+      "q": "次の漢字の読みとして正しいものを選びなさい。『散歩』",
+      "choices": ["さんぼう", "さんぽ", "さんぶ", "ざんぽ"],
+      "answerIndex": 1,
+      "explanation": "『散歩』は『さんぽ』と読みます。"
+    },
+    {
+      "category": "読解（情報抽出）",
+      "passage": "私は昨日、駅前の本屋へ行きました。そこで料理の本を2冊買いました。帰りにスーパーで野菜を買って家へ帰りました。",
+      "q": "私はどこで本を買いましたか。",
+      "choices": ["駅前の本屋", "スーパー", "学校の図書室", "自分の家"],
+      "answerIndex": 0,
+      "explanation": "『駅前の本屋へ行きました。そこで…買いました』より。"
+    }
+  ]
+}`;
+
+    // --- 初期化 ---
+    function init() {
+      // お好みでサンプルを切り替え
+      state.jsonInput = sampleJson; // sampleJson2 にしてもOK
+      render();
+    }
+
+    // --- ロジック関数 ---
+
+    function handleStartQuiz() {
+      state.errorMessage = '';
+      try {
+        const parsed = JSON.parse(state.jsonInput);
+        const normalized = normalizeQuizJson(parsed);
+
+        // バリデーション
+        if (!Array.isArray(normalized) || normalized.length === 0) {
+          throw new Error('問題データが空です。');
         }
 
-        // --- ロジック関数 ---
+        normalized.forEach((item, index) => {
+          if (!item.question || !item.options || !item.answer) {
+            throw new Error(`問題 #${index + 1} に必要なフィールド(question, options, answer)が不足しています。`);
+          }
+          if (!Array.isArray(item.options) || item.options.length < 2) {
+            throw new Error(`問題 #${index + 1} の選択肢(options)は2個以上の配列にしてください。`);
+          }
+          if (!item.options.includes(item.answer)) {
+            throw new Error(`問題 #${index + 1} の正解が選択肢に含まれていません。`);
+          }
+        });
 
-        function handleStartQuiz() {
-            state.errorMessage = '';
-            try {
-                const parsed = JSON.parse(state.jsonInput);
-                
-                // バリデーション
-                if (!parsed.quiz_data || !Array.isArray(parsed.quiz_data)) {
-                    throw new Error("JSONには 'quiz_data' 配列が含まれている必要があります。");
-                }
-                if (parsed.quiz_data.length === 0) {
-                    throw new Error("問題データが空です。");
-                }
+        state.quizData = normalized;
+        state.currentQuestionIndex = 0;
+        state.score = 0;
+        state.gameState = 'playing';
 
-                parsed.quiz_data.forEach((item, index) => {
-                    if (!item.question || !item.options || !item.answer) {
-                        throw new Error(`問題 #${index + 1} に必要なフィールド(question, options, answer)が不足しています。`);
-                    }
-                    if (!item.options.includes(item.answer)) {
-                        throw new Error(`問題 #${index + 1} の正解が選択肢に含まれていません。`);
-                    }
-                });
+        prepareQuestion();
+        render();
 
-                state.quizData = parsed.quiz_data;
-                state.currentQuestionIndex = 0;
-                state.score = 0;
-                state.gameState = 'playing';
-                
-                prepareQuestion(); // 最初の問題を準備
-                render();
+      } catch (e) {
+        state.errorMessage = e?.message || '不正なJSON形式です。カンマや括弧を確認してください。';
+        render();
+      }
+    }
 
-            } catch (e) {
-                state.errorMessage = e.message || "不正なJSON形式です。カンマや括弧を確認してください。";
-                render();
-            }
+    // ここが今回の肝：複数のJSON形式をこのアプリの内部形式に統一する
+    // 内部形式：[{ question, options, answer, explanation, passage? }]
+    function normalizeQuizJson(parsed) {
+      // (A) 既存の標準形式：{ quiz_data: [...] }
+      if (parsed && Array.isArray(parsed.quiz_data)) {
+        return parsed.quiz_data.map((x, i) => {
+          if (!x) throw new Error(`問題 #${i + 1} が不正です。`);
+          return {
+            question: String(x.question ?? ''),
+            options: Array.isArray(x.options) ? x.options.map(String) : [],
+            answer: String(x.answer ?? ''),
+            explanation: x.explanation != null ? String(x.explanation) : '',
+            passage: x.passage != null ? String(x.passage) : ''
+          };
+        });
+      }
+
+      // (B) よくある形式：{ items: [...] } / { questions: [...] } / { data: [...] } / 直配列
+      const arr = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.items)
+          ? parsed.items
+          : Array.isArray(parsed?.questions)
+            ? parsed.questions
+            : Array.isArray(parsed?.data)
+              ? parsed.data
+              : null;
+
+      if (!arr) {
+        throw new Error("JSONには 'quiz_data' 配列、または 'items'/'questions'/'data' 配列、または直配列が必要です。");
+      }
+
+      return arr.map((item, i) => {
+        if (!item || typeof item !== 'object') {
+          throw new Error(`問題 #${i + 1} が不正です。`);
         }
 
-        function prepareQuestion() {
-            if (state.quizData && state.quizData.length > 0) {
-                const currentQ = state.quizData[state.currentQuestionIndex];
-                // シャッフル
-                state.currentShuffledOptions = [...currentQ.options].sort(() => Math.random() - 0.5);
-                state.showExplanation = false;
-                state.selectedOption = null;
-                state.isCorrect = null;
-            }
+        const category = item.category != null ? String(item.category) : '';
+        const passage = item.passage != null ? String(item.passage)
+                      : item.text != null ? String(item.text)
+                      : '';
+
+        // question 本体
+        const q = item.question != null ? String(item.question)
+                : item.q != null ? String(item.q)
+                : '';
+
+        // choices/options
+        const optionsRaw = Array.isArray(item.options) ? item.options
+                        : Array.isArray(item.choices) ? item.choices
+                        : null;
+
+        if (!q || !optionsRaw) {
+          throw new Error(`問題 #${i + 1} に question/q と options/choices が必要です。`);
         }
 
-        function handleAnswer(option) {
-            if (state.showExplanation) return;
+        const options = optionsRaw.map(String);
 
-            const currentQ = state.quizData[state.currentQuestionIndex];
-            const correct = option === currentQ.answer;
+        // answer：文字列 or answerIndex など
+        let answer = item.answer != null ? String(item.answer) : null;
 
-            state.selectedOption = option;
-            state.isCorrect = correct;
-            state.showExplanation = true;
-
-            if (correct) {
-                state.score++;
-            }
-            render();
+        // answerIndex がある場合（数値 or 数値文字列）
+        if (answer == null && item.answerIndex != null) {
+          const idx = typeof item.answerIndex === 'number'
+            ? item.answerIndex
+            : (typeof item.answerIndex === 'string' && /^\d+$/.test(item.answerIndex))
+              ? Number(item.answerIndex)
+              : NaN;
+          if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
+            throw new Error(`問題 #${i + 1} の answerIndex が不正です。`);
+          }
+          answer = options[idx];
         }
 
-        function handleNext() {
-            if (state.currentQuestionIndex + 1 < state.quizData.length) {
-                state.currentQuestionIndex++;
-                prepareQuestion();
-                render();
+        // correctIndex など別名も許可（保険）
+        if (answer == null && item.correctIndex != null) {
+          const idx = typeof item.correctIndex === 'number'
+            ? item.correctIndex
+            : NaN;
+          if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
+            throw new Error(`問題 #${i + 1} の correctIndex が不正です。`);
+          }
+          answer = options[idx];
+        }
+
+        if (answer == null) {
+          throw new Error(`問題 #${i + 1} には answer か answerIndex が必要です。`);
+        }
+
+        const explanation = item.explanation != null ? String(item.explanation)
+                          : item.reason != null ? String(item.reason)
+                          : '';
+
+        const question = (category ? `【${category}】` : '') + q;
+
+        return { question, options, answer, explanation, passage };
+      });
+    }
+
+    function prepareQuestion() {
+      if (state.quizData && state.quizData.length > 0) {
+        const currentQ = state.quizData[state.currentQuestionIndex];
+        state.currentShuffledOptions = [...currentQ.options].sort(() => Math.random() - 0.5);
+        state.showExplanation = false;
+        state.selectedOption = null;
+        state.isCorrect = null;
+      }
+    }
+
+    // 文字列をonclickに埋め込まない版（引用符問題を避ける）
+    function handleAnswerIndex(idx) {
+      const option = state.currentShuffledOptions[idx];
+      handleAnswer(option);
+    }
+
+    function handleAnswer(option) {
+      if (state.showExplanation) return;
+
+      const currentQ = state.quizData[state.currentQuestionIndex];
+      const correct = option === currentQ.answer;
+
+      state.selectedOption = option;
+      state.isCorrect = correct;
+      state.showExplanation = true;
+
+      if (correct) state.score++;
+      render();
+    }
+
+    function handleNext() {
+      if (state.currentQuestionIndex + 1 < state.quizData.length) {
+        state.currentQuestionIndex++;
+        prepareQuestion();
+        render();
+      } else {
+        state.gameState = 'result';
+        render();
+      }
+    }
+
+    function handleReset() {
+      state.gameState = 'input';
+      state.quizData = null;
+      state.errorMessage = '';
+      render();
+    }
+
+    function handleInputChange(e) {
+      state.jsonInput = e.target.value;
+    }
+
+    // --- レンダリング (View) ---
+
+    function render() {
+      const app = document.getElementById('app');
+
+      const headerHtml = `
+        <header class="bg-indigo-600 p-6 text-white flex items-center gap-3">
+          <i data-lucide="file-json" width="28" height="28"></i>
+          <div class="flex-1">
+            <h1 class="text-2xl font-bold">選択問題メーカー</h1>
+            <p class="text-indigo-100 text-sm mt-1">quiz_data / items / questions / data / 直配列のJSONに対応</p>
+          </div>
+        </header>
+      `;
+
+      let mainHtml = '';
+
+      if (state.gameState === 'input') {
+        mainHtml = `
+          <div class="space-y-6 p-6">
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+              <p class="font-semibold mb-1">使い方:</p>
+              <p>下のエリアのJSONを貼り付けて「クイズを開始」を押してください。</p>
+              <p class="mt-2">対応形式：<span class="font-mono">{\"quiz_data\":[...]}</span> / <span class="font-mono">{\"items\":[...]}</span> / <span class="font-mono">[ ... ]</span> など</p>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">JSONデータ入力</label>
+              <textarea
+                id="json-input"
+                class="w-full h-64 p-4 font-mono text-sm bg-white text-slate-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-y shadow-sm"
+                placeholder='{"quiz_data": [... ]}'
+                spellcheck="false"
+              >${escapeHtml(state.jsonInput)}</textarea>
+            </div>
+
+            ${state.errorMessage ? `
+              <div class="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg animate-pulse">
+                <i data-lucide="alert-circle" width="20" height="20"></i>
+                <span class="text-sm font-medium">${escapeHtml(state.errorMessage)}</span>
+              </div>
+            ` : ''}
+
+            <button
+              onclick="handleStartQuiz()"
+              class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95 duration-200"
+            >
+              <i data-lucide="play" width="20" height="20"></i>
+              クイズを開始する
+            </button>
+
+            <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm">
+              <summary class="cursor-pointer font-semibold text-slate-700">対応JSONの例を見る</summary>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <div class="font-semibold text-slate-700 mb-1">標準（quiz_data）</div>
+                  <pre class="bg-white border border-slate-200 rounded-lg p-3 overflow-auto"><code>${escapeHtml(sampleJson)}</code></pre>
+                </div>
+                <div>
+                  <div class="font-semibold text-slate-700 mb-1">GPT形式（items + q/choices/answerIndex + passage）</div>
+                  <pre class="bg-white border border-slate-200 rounded-lg p-3 overflow-auto"><code>${escapeHtml(sampleJson2)}</code></pre>
+                </div>
+              </div>
+            </details>
+          </div>
+        `;
+
+      } else if (state.gameState === 'playing' && state.quizData) {
+        const currentQ = state.quizData[state.currentQuestionIndex];
+        const progress = ((state.currentQuestionIndex + 1) / state.quizData.length) * 100;
+
+        const optionsHtml = state.currentShuffledOptions.map((option, idx) => {
+          let btnClass = "p-4 rounded-xl border-2 text-left transition-all duration-200 font-medium relative overflow-hidden flex justify-between items-center ";
+          let iconHtml = "";
+
+          if (state.showExplanation) {
+            if (option === currentQ.answer) {
+              btnClass += "bg-green-100 border-green-500 text-green-800 ring-2 ring-green-200";
+              iconHtml = `<i data-lucide="check-circle" class="text-green-600" width="20" height="20"></i>`;
+            } else if (option === state.selectedOption) {
+              btnClass += "bg-red-100 border-red-500 text-red-800";
+              iconHtml = `<i data-lucide="x-circle" class="text-red-600" width="20" height="20"></i>`;
             } else {
-                state.gameState = 'result';
-                render();
+              btnClass += "bg-slate-50 border-slate-200 opacity-50";
             }
-        }
+          } else {
+            btnClass += "bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md cursor-pointer active:scale-[0.98]";
+          }
 
-        function handleReset() {
-            state.gameState = 'input';
-            state.quizData = null;
-            state.errorMessage = '';
-            render();
-        }
+          const disabledAttr = state.showExplanation ? 'disabled' : '';
 
-        function handleInputChange(e) {
-            state.jsonInput = e.target.value;
-        }
+          return `
+            <button
+              onclick="handleAnswerIndex(${idx})"
+              ${disabledAttr}
+              class="${btnClass}"
+            >
+              <span>${escapeHtml(option)}</span>
+              ${iconHtml}
+            </button>
+          `;
+        }).join('');
 
-        // --- レンダリング (View) ---
+        const gridClass = state.currentShuffledOptions.length > 3 ? 'md:grid-cols-2' : 'grid-cols-1';
 
-        function render() {
-            const app = document.getElementById('app');
-            let contentHtml = '';
+        mainHtml = `
+          <div class="space-y-6 p-6">
+            <div class="flex justify-between items-center text-sm text-slate-500 mb-2">
+              <span>Question ${state.currentQuestionIndex + 1} / ${state.quizData.length}</span>
+              <span>Score: ${state.score}</span>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-2">
+              <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
+            </div>
 
-            // ヘッダー (共通)
-            const headerHtml = `
-                <header class="bg-indigo-600 p-6 text-white flex items-center gap-3">
-                    <i data-lucide="file-json" width="28" height="28"></i>
-                    <h1 class="text-2xl font-bold">選択問題メーカー</h1>
-                </header>
-            `;
+            ${currentQ.passage ? `
+              <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 leading-relaxed text-slate-700">
+                <div class="text-xs font-semibold text-slate-500 mb-2">本文</div>
+                <div>${escapeHtml(currentQ.passage)}</div>
+              </div>
+            ` : ''}
 
-            let mainHtml = '';
+            <h2 class="text-xl md:text-2xl font-bold text-slate-800 leading-relaxed py-2">
+              ${escapeHtml(currentQ.question)}
+            </h2>
 
-            if (state.gameState === 'input') {
-                // 入力画面
-                mainHtml = `
-                    <div class="space-y-6 p-6">
-                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
-                            <p class="font-semibold mb-1">使い方:</p>
-                            <p>下のエリアのJSONコードを消して新しいコードを貼り付けて「クイズを開始」を押してください。</p>
-                        </div>
+            <div class="grid gap-4 ${gridClass}">
+              ${optionsHtml}
+            </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">JSONデータ入力</label>
-                            <textarea
-                                id="json-input"
-                                class="w-full h-64 p-4 font-mono text-sm bg-white text-slate-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-y shadow-sm"
-                                placeholder='{"quiz_data": [... ]}'
-                                spellcheck="false"
-                            >${escapeHtml(state.jsonInput)}</textarea>
-                        </div>
+            ${state.showExplanation ? `
+              <div class="mt-6 bg-slate-100 rounded-lg p-5 border-l-4 border-indigo-500 animate-fade-in-up">
+                <h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                  ${state.isCorrect
+                    ? '<span class="text-green-600">正解！</span>'
+                    : '<span class="text-red-600">残念...</span>'}
+                </h3>
+                <p class="text-slate-600 mb-3">
+                  <span class="font-bold">正解: </span>
+                  ${escapeHtml(currentQ.answer)}
+                </p>
+                ${currentQ.explanation ? `
+                  <p class="text-slate-700 leading-relaxed">${escapeHtml(currentQ.explanation)}</p>
+                ` : ''}
 
-                        ${state.errorMessage ? `
-                            <div class="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg animate-pulse">
-                                <i data-lucide="alert-circle" width="20" height="20"></i>
-                                <span class="text-sm font-medium">${escapeHtml(state.errorMessage)}</span>
-                            </div>
-                        ` : ''}
+                <div class="mt-4 flex justify-end">
+                  <button
+                    onclick="handleNext()"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg flex items-center gap-2 shadow-lg transition-transform hover:-translate-y-0.5"
+                  >
+                    ${state.currentQuestionIndex + 1 === state.quizData.length ? "結果を見る" : "次の問題へ"}
+                    <i data-lucide="chevron-right" width="18" height="18"></i>
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
 
-                        <button
-                            onclick="handleStartQuiz()"
-                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95 duration-200"
-                        >
-                            <i data-lucide="play" width="20" height="20"></i>
-                            クイズを開始する
-                        </button>
-                    </div>
-                `;
-            } else if (state.gameState === 'playing' && state.quizData) {
-                // プレイ画面
-                const currentQ = state.quizData[state.currentQuestionIndex];
-                const progress = ((state.currentQuestionIndex + 1) / state.quizData.length) * 100;
+      } else if (state.gameState === 'result') {
+        const percentage = Math.round((state.score / state.quizData.length) * 100);
 
-                // 選択肢ボタンの生成
-                const optionsHtml = state.currentShuffledOptions.map((option, idx) => {
-                    let btnClass = "p-4 rounded-xl border-2 text-left transition-all duration-200 font-medium relative overflow-hidden flex justify-between items-center ";
-                    let iconHtml = "";
+        mainHtml = `
+          <div class="p-6">
+            <div class="text-center py-10 space-y-6">
+              <div class="inline-flex items-center justify-center w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full mb-4">
+                <i data-lucide="check-circle" width="48" height="48"></i>
+              </div>
+              <h2 class="text-3xl font-bold text-slate-800">テスト終了！</h2>
 
-                    if (state.showExplanation) {
-                        if (option === currentQ.answer) {
-                            btnClass += "bg-green-100 border-green-500 text-green-800 ring-2 ring-green-200";
-                            iconHtml = `<i data-lucide="check-circle" class="text-green-600" width="20" height="20"></i>`;
-                        } else if (option === state.selectedOption) {
-                            btnClass += "bg-red-100 border-red-500 text-red-800";
-                            iconHtml = `<i data-lucide="x-circle" class="text-red-600" width="20" height="20"></i>`;
-                        } else {
-                            btnClass += "bg-slate-50 border-slate-200 opacity-50";
-                        }
-                    } else {
-                        btnClass += "bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md cursor-pointer active:scale-[0.98]";
-                    }
+              <div class="text-5xl font-black text-indigo-600 my-4">
+                ${state.score} <span class="text-2xl text-slate-400 font-normal">/ ${state.quizData.length}</span>
+              </div>
 
-                    // onclick属性に直接関数呼び出しを埋め込む際は、引数をエスケープする必要があるが、
-                    // ここではシンプルにインデックスや文字列を渡す。文字列にクォートが含まれる場合に備えてエスケープ処理が必要。
-                    // 簡便のため、ここでは配列のインデックスを使って処理することも可能だが、
-                    // 文字列渡しで実装する。
-                    const safeOption = option.replace(/"/g, '&quot;'); 
-                    const disabledAttr = state.showExplanation ? 'disabled' : '';
-                    
-                    return `
-                        <button
-                            onclick="handleAnswer('${safeOption}')"
-                            ${disabledAttr}
-                            class="${btnClass}"
-                        >
-                            <span>${escapeHtml(option)}</span>
-                            ${iconHtml}
-                        </button>
-                    `;
-                }).join('');
+              <p class="text-slate-600">
+                ${state.score === state.quizData.length
+                  ? "全問正解！"
+                  : `正解率は ${percentage}% でした。`}
+              </p>
 
-                // グリッドレイアウト
-                const gridClass = state.currentShuffledOptions.length > 3 ? 'md:grid-cols-2' : 'grid-cols-1';
+              <div class="pt-8">
+                <button
+                  onclick="handleReset()"
+                  class="bg-lime-600 hover:bg-lime-700 text-white font-bold py-3 px-8 rounded-lg flex items-center gap-2 mx-auto transition-colors shadow-lg"
+                >
+                  <i data-lucide="refresh-cw" width="20" height="20"></i>
+                  別の問題を作る
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
 
-                mainHtml = `
-                    <div class="space-y-6 p-6">
-                        <!-- 進捗バー -->
-                        <div class="flex justify-between items-center text-sm text-slate-500 mb-2">
-                            <span>Question ${state.currentQuestionIndex + 1} / ${state.quizData.length}</span>
-                            <span>Score: ${state.score}</span>
-                        </div>
-                        <div class="w-full bg-slate-200 rounded-full h-2">
-                            <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
-                        </div>
+      app.innerHTML = headerHtml + mainHtml;
+      lucide.createIcons();
 
-                        <!-- 問題文 -->
-                        <h2 class="text-xl md:text-2xl font-bold text-slate-800 leading-relaxed py-4">
-                            ${escapeHtml(currentQ.question)}
-                        </h2>
+      const textarea = document.getElementById('json-input');
+      if (textarea) {
+        textarea.addEventListener('input', handleInputChange);
+      }
+    }
 
-                        <!-- 選択肢 -->
-                        <div class="grid gap-4 ${gridClass}">
-                            ${optionsHtml}
-                        </div>
+    // --- ユーティリティ ---
+    function escapeHtml(unsafe) {
+      if (typeof unsafe !== 'string') return unsafe;
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
 
-                        <!-- 解説エリア -->
-                        ${state.showExplanation ? `
-                            <div class="mt-6 bg-slate-100 rounded-lg p-5 border-l-4 border-indigo-500 animate-fade-in-up">
-                                <h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">
-                                    ${state.isCorrect 
-                                        ? '<span class="text-green-600">正解！</span>' 
-                                        : '<span class="text-red-600">残念...</span>'}
-                                </h3>
-                                <p class="text-slate-600 mb-4">
-                                    <span class="font-bold">正解: </span> 
-                                    ${escapeHtml(currentQ.answer)}
-                                </p>
-                                <p class="text-slate-700 leading-relaxed">
-                                    ${escapeHtml(currentQ.explanation || "")}
-                                </p>
-                                
-                                <div class="mt-4 flex justify-end">
-                                    <button
-                                        onclick="handleNext()"
-                                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg flex items-center gap-2 shadow-lg transition-transform hover:-translate-y-0.5"
-                                    >
-                                        ${state.currentQuestionIndex + 1 === state.quizData.length ? "結果を見る" : "次の問題へ"}
-                                        <i data-lucide="chevron-right" width="18" height="18"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-
-            } else if (state.gameState === 'result') {
-                // 結果画面
-                const percentage = Math.round((state.score / state.quizData.length) * 100);
-                
-                mainHtml = `
-                    <div class="p-6">
-                        <div class="text-center py-10 space-y-6">
-                            <div class="inline-flex items-center justify-center w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full mb-4">
-                                <i data-lucide="check-circle" width="48" height="48"></i>
-                            </div>
-                            <h2 class="text-3xl font-bold text-slate-800">テスト終了！</h2>
-                            
-                            <div class="text-5xl font-black text-indigo-600 my-4">
-                                ${state.score} <span class="text-2xl text-slate-400 font-normal">/ ${state.quizData.length}</span>
-                            </div>
-                            
-                            <p class="text-slate-600">
-                                ${state.score === state.quizData.length 
-                                    ? "全問正解！素晴らしい知識です！" 
-                                    : `正解率は ${percentage}% でした。`}
-                            </p>
-
-                            <div class="pt-8">
-                                <button
-                                    onclick="handleReset()"
-                                    class="bg-lime-600 hover:bg-lime-700 text-white font-bold py-3 px-8 rounded-lg flex items-center gap-2 mx-auto transition-colors shadow-lg"
-                                >
-                                    <i data-lucide="refresh-cw" width="20" height="20"></i>
-                                    別の問題を作る
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            app.innerHTML = headerHtml + mainHtml;
-            
-            // アイコンのレンダリング
-            lucide.createIcons();
-
-            // 入力欄のイベントリスナー再設定
-            const textarea = document.getElementById('json-input');
-            if (textarea) {
-                textarea.addEventListener('input', handleInputChange);
-                // カーソル位置がリセットされないように値をセットし直すなどの制御が必要だが、
-                // 単純なinnerHTML書き換えだとフォーカスが外れる問題がある。
-                // 今回は簡易実装のため、入力のたびに再レンダリングはしない。
-                // handleInputChangeでstateだけ更新し、renderは呼ばない。
-                // ただし、初期値はvalue属性でセットされている。
-            }
-        }
-
-        // --- ユーティリティ ---
-        function escapeHtml(unsafe) {
-            if (typeof unsafe !== 'string') return unsafe;
-            return unsafe
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
-        // アプリケーション開始
-        init();
-
-    </script>
+    // アプリケーション開始
+    init();
+  </script>
 </body>
 </html>
