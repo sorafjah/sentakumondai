@@ -129,13 +129,59 @@
     // 内部形式：[{ question, options, answer, explanation, passage? }]
     function normalizeQuizJson(parsed) {
       // (A) 既存の標準形式：{ quiz_data: [...] }
+      // ★修正点：quiz_data でも answerIndex / correctIndex を解釈できるようにする
+      //          category があれば 【category】 を question に前置する（items と統一）
       if (parsed && Array.isArray(parsed.quiz_data)) {
         return parsed.quiz_data.map((x, i) => {
           if (!x) throw new Error(`問題 #${i + 1} が不正です。`);
+
+          const options = Array.isArray(x.options) ? x.options.map(String) : [];
+
+          // answer：文字列 or answerIndex など
+          let answer = x.answer != null ? String(x.answer) : null;
+
+          // answerIndex がある場合（数値 or 数値文字列）
+          if (answer == null && x.answerIndex != null) {
+            const idx = typeof x.answerIndex === 'number'
+              ? x.answerIndex
+              : (typeof x.answerIndex === 'string' && /^\d+$/.test(x.answerIndex))
+                ? Number(x.answerIndex)
+                : NaN;
+
+            if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
+              throw new Error(`問題 #${i + 1} の answerIndex が不正です。`);
+            }
+            answer = options[idx];
+          }
+
+          // correctIndex など別名も許可（保険）
+          if (answer == null && x.correctIndex != null) {
+            const idx = typeof x.correctIndex === 'number'
+              ? x.correctIndex
+              : (typeof x.correctIndex === 'string' && /^\d+$/.test(x.correctIndex))
+                ? Number(x.correctIndex)
+                : NaN;
+
+            if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
+              throw new Error(`問題 #${i + 1} の correctIndex が不正です。`);
+            }
+            answer = options[idx];
+          }
+
+          if (answer == null) {
+            throw new Error(`問題 #${i + 1} には answer か answerIndex が必要です。`);
+          }
+
+          const category = x.category != null ? String(x.category) : '';
+          const q = String(x.question ?? '');
+          if (!q) throw new Error(`問題 #${i + 1} に question が必要です。`);
+
+          const question = (category ? `【${category}】` : '') + q;
+
           return {
-            question: String(x.question ?? ''),
-            options: Array.isArray(x.options) ? x.options.map(String) : [],
-            answer: String(x.answer ?? ''),
+            question,
+            options,
+            answer: String(answer),
             explanation: x.explanation != null ? String(x.explanation) : '',
             passage: x.passage != null ? String(x.passage) : ''
           };
@@ -286,7 +332,7 @@
           <i data-lucide="file-json" width="28" height="28"></i>
           <div class="flex-1">
             <h1 class="text-2xl font-bold">選択問題メーカー</h1>
-            <p class="text-indigo-100 text-sm mt-1">quiz_data / items / questions / data / 直配列のJSONに対応</p>
+            <p class="text-indigo-100 text-sm mt-1">quiz_data / items / questions / data / 直配列のJSONに対応（quiz_dataでもanswerIndex対応）</p>
           </div>
         </header>
       `;
@@ -303,7 +349,7 @@
               <p class="mt-2 text-sm">
                 ▶ テキスト問題をJSONに変換したい場合は、<a href="https://chatgpt.com/g/g-6970db9c23848191975c9e0daefc339b-xuan-ze-wen-ti-jsonhua" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-semibold underline hover:text-indigo-800">選択問題JSON化GPT</a> を使ってください。<br>
                 問題文（A/B/C/Dや2択・4択のテキスト）を貼り付けるだけで、このアプリで使える <code class="bg-slate-100 px-1 rounded">quiz_data</code> 形式のJSONに変換できます。
-</p>
+              </p>
               <p class="mt-2">対応形式：<span class="font-mono">{\"quiz_data\":[...]}</span> / <span class="font-mono">{\"items\":[...]}</span> / <span class="font-mono">[ ... ]</span> など</p>
             </div>
 
