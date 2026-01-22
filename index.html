@@ -1,548 +1,499 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>選択問題メーカー</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quiz Display</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-    body { font-family: 'Inter', sans-serif; }
-    .animate-fade-in-up { animation: fadeInUp 0.5s ease-out; }
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
+    :root{
+      /* 大型ディスプレイ向け（必要ならここだけ調整） */
+      --font-base: clamp(22px, 2.1vw, 36px);     /* 本文・選択肢 */
+      --font-question: clamp(26px, 2.6vw, 44px); /* 設問 */
+      --radius: 22px;
+      --border: 2px;
+
+      --bg: #ffffff;
+      --card: #ffffff;
+      --muted: #f5f5f5;
+      --text: #111111;
+      --line: #d9d9d9;
+
+      --ok: #1b7f3a;
+      --okBg: #eaf7ef;
+
+      --ng: #b42318;
+      --ngBg: #fdecec;
+
+      --dim: 0.42;
+
+      --labelW: 4.5rem; /* 本文ラベルの固定幅（外側の幅は増えない） */
     }
+
+    *{ box-sizing: border-box; }
+    html, body { height: 100%; }
+    body{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+
+      /* UD寄り・iPad/PCで崩れにくいフォントスタック */
+      font-family:
+        "BIZ UDPGothic",
+        "BIZ UDゴシック",
+        "Noto Sans JP",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Hiragino Sans",
+        "Yu Gothic",
+        "Meiryo",
+        system-ui,
+        sans-serif;
+    }
+
+    .screen{
+      width: min(1200px, 92vw);
+      margin: clamp(16px, 2.2vw, 32px) auto;
+      display: grid;
+      gap: clamp(12px, 1.6vw, 20px);
+    }
+
+    /* 本文カード：左にラベル（外側の幅は増やさない） */
+    .passageCard{
+      display: grid;
+      grid-template-columns: var(--labelW) 1fr;
+      border-radius: var(--radius);
+      background: var(--muted);
+      overflow: hidden;
+    }
+    .sideLabel{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      letter-spacing: .12em;
+      color: #444;
+      background: #ededed;
+      font-size: clamp(14px, 1.2vw, 22px);
+      user-select: none;
+    }
+    .passageText{
+      padding: clamp(12px, 1.8vw, 18px) clamp(14px, 2vw, 22px);
+      font-size: var(--font-base);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* 設問 */
+    .questionBlock{
+      padding: 0 2px;
+    }
+    .qLabel{
+      font-size: clamp(14px, 1.2vw, 22px);
+      font-weight: 900;
+      color: #444;
+      letter-spacing: .12em;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+    .qText{
+      font-size: var(--font-question);
+      font-weight: 900;
+      line-height: 1.25;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* 選択肢 */
+    .optionsGrid{
+      display: grid;
+      gap: clamp(10px, 1.4vw, 18px);
+    }
+    .cols-2{ grid-template-columns: 1fr 1fr; }
+    .cols-1{ grid-template-columns: 1fr; }
+
+    .optCard{
+      width: 100%;
+      text-align: left;
+      border: var(--border) solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card);
+      padding: clamp(12px, 1.8vw, 18px) clamp(14px, 2vw, 20px);
+      cursor: pointer;
+
+      display: grid;
+      grid-template-columns: 3.2rem 1fr;
+      align-items: start;
+      column-gap: clamp(10px, 1.4vw, 14px);
+
+      min-height: clamp(78px, 9vw, 112px);
+      transition: opacity .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .optCard:disabled{ cursor: default; }
+
+    .optKey{
+      font-size: clamp(26px, 2.5vw, 40px);
+      font-weight: 1000;
+      line-height: 1;
+      user-select: none;
+    }
+    .optBody{
+      font-size: var(--font-base);
+      font-weight: 700;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* 表示前：選択中（正誤は出さない） */
+    .isPicked{
+      border-color: #111;
+      box-shadow: 0 0 0 4px rgba(0,0,0,.10);
+    }
+
+    /* 表示後 */
+    .isDim{ opacity: var(--dim); }
+
+    .isCorrect{
+      border-color: var(--ok);
+      background: var(--okBg);
+    }
+    .isCorrectPicked{
+      border-color: var(--ok);
+      background: var(--okBg);
+      box-shadow: 0 0 0 4px rgba(27,127,58,.12);
+    }
+    .isWrongPicked{
+      border-color: var(--ng);
+      background: var(--ngBg);
+      box-shadow: 0 0 0 4px rgba(180,35,24,.10);
+    }
+
+    /* 先生操作（控えめ・右下） */
+    .footerRow{
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .btn{
+      font-size: clamp(16px, 1.5vw, 26px);
+      font-weight: 900;
+      padding: clamp(8px, 1.2vw, 12px) clamp(12px, 1.6vw, 20px);
+      border-radius: 14px;
+      border: 2px solid #111;
+      background: #fff;
+      color: #111;
+      user-select: none;
+    }
+    .btnPrimary{
+      background: #111;
+      color: #fff;
+    }
+    .btn:disabled{
+      opacity: .35;
+    }
+
+    /* 本文が空のときは本文カードを隠す */
+    .isHidden{ display: none; }
   </style>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8">
+<body>
+  <main class="screen" aria-label="Quiz">
+    <section id="passageCard" class="passageCard" role="note" aria-label="本文">
+      <div class="sideLabel">本文</div>
+      <div id="passageText" class="passageText"></div>
+    </section>
 
-  <div id="app" class="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden min-h-[600px]"></div>
+    <section class="questionBlock" aria-label="問題">
+      <div class="qLabel">問題</div>
+      <div id="qText" class="qText"></div>
+    </section>
+
+    <section id="options" class="optionsGrid cols-2" aria-label="選択肢"></section>
+
+    <div class="footerRow" aria-label="操作">
+      <button id="revealBtn" class="btn btnPrimary" disabled>正解を表示</button>
+      <button id="nextBtn" class="btn" disabled>次へ</button>
+    </div>
+  </main>
 
   <script>
-    // --- アプリの状態管理 ---
-    const state = {
-      jsonInput: '',
-      quizData: null,
-      gameState: 'input', // input, playing, result
-      currentQuestionIndex: 0,
-      score: 0,
-      showExplanation: false,
-      selectedOption: null,
-      isCorrect: null,
-      errorMessage: '',
-      currentShuffledOptions: []
+    /***********************
+     * ここに問題JSONを貼り付け
+     * - quiz_data / items / questions / data / 直配列 に対応
+     * - answerIndex 対応（A=0,B=1,C=2,D=3）
+     ***********************/
+    const QUIZ_SOURCE = {
+      "quiz_data": [
+        {
+          "id": 1,
+          "question": "雨の日にバスが遅れることがある理由として正しいものはどれですか。",
+          "passage": "この町では、雨の日に道路が混みやすい。\nそのため、雨の日はバスの到着が遅れることがある。",
+          "options": ["雨の日は人が少ないから","道路が混みやすいから","バスの本数が減るから","運転手が休むから"],
+          "answerIndex": 1,
+          "explanation": ""
+        },
+        {
+          "id": 2,
+          "question": "午後の公園の様子として正しいものはどれですか。",
+          "passage": "この公園は、朝は人が少なく、静かです。\n午後になると、子どもたちでにぎやかになります。",
+          "options": ["静かで人がいない","人が多くてにぎやか","朝より寒い","使うことができない"],
+          "answerIndex": 1,
+          "explanation": ""
+        },
+        {
+          "id": 3,
+          "question": "この図書館で本を借りられなくなる場合はどれですか。",
+          "passage": "この図書館では、本は1人3冊まで借りられます。\n返す日を守らないと、次は借りることができません。",
+          "options": ["3冊借りたとき","本を読んだとき","返す日を守らなかったとき","図書館に行かなかったとき"],
+          "answerIndex": 2,
+          "explanation": ""
+        },
+        {
+          "id": 4,
+          "question": "けんさんが早く寝た目的は何ですか。",
+          "passage": "けんさんは、テストの前の日に早く寝ました。\n次の日、元気に学校へ行くためです。",
+          "options": ["テストを受けないため","元気に学校へ行くため","宿題をしないため","友だちと遊ぶため"],
+          "answerIndex": 1,
+          "explanation": ""
+        },
+        {
+          "id": 5,
+          "question": "この文章の内容として正しいものはどれですか。",
+          "passage": "この店は、値段が安いです。\nそのため、多くの人が買い物に来ます。",
+          "options": ["この店は高い","この店は人気がある","この店は遠くにある","この店は閉まっている"],
+          "answerIndex": 1,
+          "explanation": ""
+        }
+      ]
     };
 
-    // --- サンプルデータ ---
-    // 1) 従来形式（このアプリの標準）
-    const sampleJson = `{
-  "quiz_data": [
-    {
-      "question": "１日は何時間ですか？",
-      "options": ["12時間", "24時間"],
-      "answer": "24時間",
-      "explanation": "1日は24時間です。"
-    },
-    {
-      "question": "信号機の『止まれ』は何色ですか？",
-      "options": ["青", "黄", "赤"],
-      "answer": "赤",
-      "explanation": "赤色は『止まれ』を意味します。"
-    }
-  ]
-}`;
+    /***********************
+     * 以降：表示ロジック
+     ***********************/
+    const LETTERS = ["A","B","C","D","E","F"];
+    const normalizeString = (s) => (s ?? "").toString().trim();
 
-    // 2) GPT出力でよくある形式（対応済み）
-    //    - items（または questions / data / 直配列）
-    //    - q / choices / answerIndex / category / passage を受け付け
-    const sampleJson2 = `{
-  "items": [
-    {
-      "category": "語彙",
-      "q": "次の漢字の読みとして正しいものを選びなさい。『散歩』",
-      "choices": ["さんぼう", "さんぽ", "さんぶ", "ざんぽ"],
-      "answerIndex": 1,
-      "explanation": "『散歩』は『さんぽ』と読みます。"
-    },
-    {
-      "category": "読解（情報抽出）",
-      "passage": "私は昨日、駅前の本屋へ行きました。そこで料理の本を2冊買いました。帰りにスーパーで野菜を買って家へ帰りました。",
-      "q": "私はどこで本を買いましたか。",
-      "choices": ["駅前の本屋", "スーパー", "学校の図書室", "自分の家"],
-      "answerIndex": 0,
-      "explanation": "『駅前の本屋へ行きました。そこで…買いました』より。"
-    }
-  ]
-}`;
-
-    // --- 初期化 ---
-    function init() {
-      // お好みでサンプルを切り替え
-      state.jsonInput = sampleJson; // sampleJson2 にしてもOK
-      render();
-    }
-
-    // --- ロジック関数 ---
-
-    function handleStartQuiz() {
-      state.errorMessage = '';
-      try {
-        const parsed = JSON.parse(state.jsonInput);
-        const normalized = normalizeQuizJson(parsed);
-
-        // バリデーション
-        if (!Array.isArray(normalized) || normalized.length === 0) {
-          throw new Error('問題データが空です。');
-        }
-
-        normalized.forEach((item, index) => {
-          if (!item.question || !item.options || !item.answer) {
-            throw new Error(`問題 #${index + 1} に必要なフィールド(question, options, answer)が不足しています。`);
-          }
-          if (!Array.isArray(item.options) || item.options.length < 2) {
-            throw new Error(`問題 #${index + 1} の選択肢(options)は2個以上の配列にしてください。`);
-          }
-          if (!item.options.includes(item.answer)) {
-            throw new Error(`問題 #${index + 1} の正解が選択肢に含まれていません。`);
-          }
-        });
-
-        state.quizData = normalized;
-        state.currentQuestionIndex = 0;
-        state.score = 0;
-        state.gameState = 'playing';
-
-        prepareQuestion();
-        render();
-
-      } catch (e) {
-        state.errorMessage = e?.message || '不正なJSON形式です。カンマや括弧を確認してください。';
-        render();
+    function extractQuizArray(src){
+      if (Array.isArray(src)) return src;
+      if (!src || typeof src !== "object") return [];
+      const keys = ["quiz_data","items","questions","data"];
+      for (const k of keys){
+        if (Array.isArray(src[k])) return src[k];
       }
+      return [];
     }
 
-    // ここが今回の肝：複数のJSON形式をこのアプリの内部形式に統一する
-    // 内部形式：[{ question, options, answer, explanation, passage? }]
-    function normalizeQuizJson(parsed) {
-      // (A) 既存の標準形式：{ quiz_data: [...] }
-      // ★修正点：quiz_data でも answerIndex / correctIndex を解釈できるようにする
-      //          category があれば 【category】 を question に前置する（items と統一）
-      if (parsed && Array.isArray(parsed.quiz_data)) {
-        return parsed.quiz_data.map((x, i) => {
-          if (!x) throw new Error(`問題 #${i + 1} が不正です。`);
+    function answerToIndex(q){
+      // 優先：answerIndex
+      if (Number.isInteger(q.answerIndex)) return q.answerIndex;
 
-          const options = Array.isArray(x.options) ? x.options.map(String) : [];
+      // 次：answer（A/B/C/D, 1/2/3/4, ア/イ/ウ/エ, 文字列一致）
+      const ans = normalizeString(q.answer);
+      if (!ans) return -1;
 
-          // answer：文字列 or answerIndex など
-          let answer = x.answer != null ? String(x.answer) : null;
-
-          // answerIndex がある場合（数値 or 数値文字列）
-          if (answer == null && x.answerIndex != null) {
-            const idx = typeof x.answerIndex === 'number'
-              ? x.answerIndex
-              : (typeof x.answerIndex === 'string' && /^\d+$/.test(x.answerIndex))
-                ? Number(x.answerIndex)
-                : NaN;
-
-            if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
-              throw new Error(`問題 #${i + 1} の answerIndex が不正です。`);
-            }
-            answer = options[idx];
-          }
-
-          // correctIndex など別名も許可（保険）
-          if (answer == null && x.correctIndex != null) {
-            const idx = typeof x.correctIndex === 'number'
-              ? x.correctIndex
-              : (typeof x.correctIndex === 'string' && /^\d+$/.test(x.correctIndex))
-                ? Number(x.correctIndex)
-                : NaN;
-
-            if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
-              throw new Error(`問題 #${i + 1} の correctIndex が不正です。`);
-            }
-            answer = options[idx];
-          }
-
-          if (answer == null) {
-            throw new Error(`問題 #${i + 1} には answer か answerIndex が必要です。`);
-          }
-
-          const category = x.category != null ? String(x.category) : '';
-          const q = String(x.question ?? '');
-          if (!q) throw new Error(`問題 #${i + 1} に question が必要です。`);
-
-          const question = (category ? `【${category}】` : '') + q;
-
-          return {
-            question,
-            options,
-            answer: String(answer),
-            explanation: x.explanation != null ? String(x.explanation) : '',
-            passage: x.passage != null ? String(x.passage) : ''
-          };
-        });
+      // 数字（1始まり）
+      if (/^\d+$/.test(ans)){
+        const n = parseInt(ans, 10);
+        return Number.isFinite(n) ? (n - 1) : -1;
       }
 
-      // (B) よくある形式：{ items: [...] } / { questions: [...] } / { data: [...] } / 直配列
-      const arr = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed?.items)
-          ? parsed.items
-          : Array.isArray(parsed?.questions)
-            ? parsed.questions
-            : Array.isArray(parsed?.data)
-              ? parsed.data
-              : null;
-
-      if (!arr) {
-        throw new Error("JSONには 'quiz_data' 配列、または 'items'/'questions'/'data' 配列、または直配列が必要です。");
+      // 英字
+      const m1 = ans.match(/^[A-Fa-f]$/);
+      if (m1){
+        return m1[0].toUpperCase().charCodeAt(0) - "A".charCodeAt(0);
       }
 
-      return arr.map((item, i) => {
-        if (!item || typeof item !== 'object') {
-          throw new Error(`問題 #${i + 1} が不正です。`);
-        }
+      // 日本語（ア/イ/ウ/エ）
+      const mapKana = { "ア":0, "イ":1, "ウ":2, "エ":3, "オ":4, "カ":5 };
+      if (mapKana.hasOwnProperty(ans)) return mapKana[ans];
 
-        const category = item.category != null ? String(item.category) : '';
-        const passage = item.passage != null ? String(item.passage)
-                      : item.text != null ? String(item.text)
-                      : '';
+      // 文字列一致（optionsと完全一致）
+      const opts = Array.isArray(q.options) ? q.options : [];
+      const idx = opts.findIndex(o => normalizeString(o) === ans);
+      return idx >= 0 ? idx : -1;
+    }
 
-        // question 本体
-        const q = item.question != null ? String(item.question)
-                : item.q != null ? String(item.q)
-                : '';
+    function sanitizeQuestion(raw){
+      const q = { ...raw };
+      q.passage = normalizeString(q.passage);
+      q.question = normalizeString(q.question);
+      q.options = Array.isArray(q.options) ? q.options.map(normalizeString).filter(Boolean) : [];
+      q.answerIndex = answerToIndex(q);
+      return q;
+    }
 
-        // choices/options
-        const optionsRaw = Array.isArray(item.options) ? item.options
-                        : Array.isArray(item.choices) ? item.choices
-                        : null;
+    const state = {
+      list: extractQuizArray(QUIZ_SOURCE).map(sanitizeQuestion),
+      i: 0,
+      picked: -1,
+      revealed: false
+    };
 
-        if (!q || !optionsRaw) {
-          throw new Error(`問題 #${i + 1} に question/q と options/choices が必要です。`);
-        }
+    const passageCard = document.getElementById("passageCard");
+    const passageText = document.getElementById("passageText");
+    const qText = document.getElementById("qText");
+    const optionsEl = document.getElementById("options");
+    const revealBtn = document.getElementById("revealBtn");
+    const nextBtn = document.getElementById("nextBtn");
 
-        const options = optionsRaw.map(String);
+    function setGridCols(n){
+      // 2択は横2枚、3-4択は2×2、その他は1列
+      optionsEl.classList.remove("cols-1","cols-2");
+      if (n === 2 || n === 3 || n === 4) optionsEl.classList.add("cols-2");
+      else optionsEl.classList.add("cols-1");
+    }
 
-        // answer：文字列 or answerIndex など
-        let answer = item.answer != null ? String(item.answer) : null;
-
-        // answerIndex がある場合（数値 or 数値文字列）
-        if (answer == null && item.answerIndex != null) {
-          const idx = typeof item.answerIndex === 'number'
-            ? item.answerIndex
-            : (typeof item.answerIndex === 'string' && /^\d+$/.test(item.answerIndex))
-              ? Number(item.answerIndex)
-              : NaN;
-          if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
-            throw new Error(`問題 #${i + 1} の answerIndex が不正です。`);
-          }
-          answer = options[idx];
-        }
-
-        // correctIndex など別名も許可（保険）
-        if (answer == null && item.correctIndex != null) {
-          const idx = typeof item.correctIndex === 'number'
-            ? item.correctIndex
-            : NaN;
-          if (!Number.isFinite(idx) || idx < 0 || idx >= options.length) {
-            throw new Error(`問題 #${i + 1} の correctIndex が不正です。`);
-          }
-          answer = options[idx];
-        }
-
-        if (answer == null) {
-          throw new Error(`問題 #${i + 1} には answer か answerIndex が必要です。`);
-        }
-
-        const explanation = item.explanation != null ? String(item.explanation)
-                          : item.reason != null ? String(item.reason)
-                          : '';
-
-        const question = (category ? `【${category}】` : '') + q;
-
-        return { question, options, answer, explanation, passage };
+    function clearOptionStyles(){
+      const cards = [...optionsEl.querySelectorAll(".optCard")];
+      cards.forEach(c => {
+        c.disabled = false;
+        c.classList.remove("isPicked","isDim","isCorrect","isCorrectPicked","isWrongPicked");
       });
     }
 
-    function prepareQuestion() {
-      if (state.quizData && state.quizData.length > 0) {
-        const currentQ = state.quizData[state.currentQuestionIndex];
-        state.currentShuffledOptions = [...currentQ.options].sort(() => Math.random() - 0.5);
-        state.showExplanation = false;
-        state.selectedOption = null;
-        state.isCorrect = null;
+    function render(){
+      const q = state.list[state.i];
+      if (!q){
+        // 何も出さない（必要なら画面を空に）
+        passageCard.classList.add("isHidden");
+        qText.textContent = "";
+        optionsEl.innerHTML = "";
+        revealBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
       }
-    }
 
-    // 文字列をonclickに埋め込まない版（引用符問題を避ける）
-    function handleAnswerIndex(idx) {
-      const option = state.currentShuffledOptions[idx];
-      handleAnswer(option);
-    }
-
-    function handleAnswer(option) {
-      if (state.showExplanation) return;
-
-      const currentQ = state.quizData[state.currentQuestionIndex];
-      const correct = option === currentQ.answer;
-
-      state.selectedOption = option;
-      state.isCorrect = correct;
-      state.showExplanation = true;
-
-      if (correct) state.score++;
-      render();
-    }
-
-    function handleNext() {
-      if (state.currentQuestionIndex + 1 < state.quizData.length) {
-        state.currentQuestionIndex++;
-        prepareQuestion();
-        render();
+      // 本文
+      if (q.passage){
+        passageCard.classList.remove("isHidden");
+        passageText.textContent = q.passage;
       } else {
-        state.gameState = 'result';
+        passageCard.classList.add("isHidden");
+        passageText.textContent = "";
+      }
+
+      // 設問
+      qText.textContent = q.question || "";
+
+      // 選択肢
+      optionsEl.innerHTML = "";
+      const opts = q.options || [];
+      setGridCols(opts.length);
+
+      opts.forEach((text, idx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "optCard";
+        btn.dataset.index = String(idx);
+
+        const key = document.createElement("span");
+        key.className = "optKey";
+        key.textContent = LETTERS[idx] ?? String(idx + 1);
+
+        const body = document.createElement("span");
+        body.className = "optBody";
+        body.textContent = text;
+
+        btn.appendChild(key);
+        btn.appendChild(body);
+
+        btn.addEventListener("click", () => onPick(idx));
+        optionsEl.appendChild(btn);
+      });
+
+      // 状態リセット
+      state.picked = -1;
+      state.revealed = false;
+      revealBtn.disabled = true;
+      nextBtn.disabled = true;
+    }
+
+    function onPick(idx){
+      if (state.revealed) return;
+
+      state.picked = idx;
+      const cards = [...optionsEl.querySelectorAll(".optCard")];
+      cards.forEach(c => c.classList.remove("isPicked"));
+      const pickedCard = cards.find(c => Number(c.dataset.index) === idx);
+      if (pickedCard) pickedCard.classList.add("isPicked");
+
+      // 1つ選んだら先生ボタン有効化
+      revealBtn.disabled = false;
+    }
+
+    function reveal(){
+      const q = state.list[state.i];
+      if (!q || state.revealed) return;
+
+      state.revealed = true;
+
+      const correctIndex = q.answerIndex;
+      const cards = [...optionsEl.querySelectorAll(".optCard")];
+
+      // 全体を落ち着かせる
+      cards.forEach(c => c.classList.add("isDim"));
+
+      // 正解カードを強調
+      if (Number.isInteger(correctIndex) && correctIndex >= 0){
+        const correctCard = cards.find(c => Number(c.dataset.index) === correctIndex);
+        if (correctCard){
+          correctCard.classList.remove("isDim");
+          correctCard.classList.add("isCorrect");
+        }
+      }
+
+      // 選択カードの正誤
+      if (state.picked >= 0){
+        const pickedCard = cards.find(c => Number(c.dataset.index) === state.picked);
+        if (pickedCard){
+          pickedCard.classList.remove("isDim");
+          if (state.picked === correctIndex) pickedCard.classList.add("isCorrectPicked");
+          else pickedCard.classList.add("isWrongPicked");
+        }
+      }
+
+      // 以後操作無効化
+      cards.forEach(c => (c.disabled = true));
+      revealBtn.disabled = true;
+      nextBtn.disabled = (state.i >= state.list.length - 1);
+      if (!nextBtn.disabled) nextBtn.focus();
+    }
+
+    function next(){
+      if (state.i < state.list.length - 1){
+        state.i += 1;
         render();
       }
     }
 
-    function handleReset() {
-      state.gameState = 'input';
-      state.quizData = null;
-      state.errorMessage = '';
-      render();
-    }
+    revealBtn.addEventListener("click", reveal);
+    nextBtn.addEventListener("click", next);
 
-    function handleInputChange(e) {
-      state.jsonInput = e.target.value;
-    }
+    // キーボード操作（先生向け：非表示の補助）
+    // A/B/C/D: 選択、Space: 正解表示、Enter: 次へ
+    window.addEventListener("keydown", (e) => {
+      const k = e.key.toUpperCase();
 
-    // --- レンダリング (View) ---
-
-    function render() {
-      const app = document.getElementById('app');
-
-      const headerHtml = `
-        <header class="bg-indigo-600 p-6 text-white flex items-center gap-3">
-          <i data-lucide="file-json" width="28" height="28"></i>
-          <div class="flex-1">
-            <h1 class="text-2xl font-bold">選択問題メーカー</h1>
-            <p class="text-indigo-100 text-sm mt-1">quiz_data / items / questions / data / 直配列のJSONに対応（quiz_dataでもanswerIndex対応）</p>
-          </div>
-        </header>
-      `;
-
-      let mainHtml = '';
-
-      if (state.gameState === 'input') {
-        mainHtml = `
-          <div class="space-y-6 p-6">
-            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
-              <p class="font-semibold mb-1">使い方:</p>
-              <p>下のエリアのJSONを貼り付けて「クイズを開始」を押してください。
-              </p>
-              <p class="mt-2 text-sm">
-                ▶ テキスト問題をJSONに変換したい場合は、<a href="https://chatgpt.com/g/g-6970db9c23848191975c9e0daefc339b-xuan-ze-wen-ti-jsonhua" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-semibold underline hover:text-indigo-800">選択問題JSON化GPT</a> を使ってください。<br>
-                問題文（A/B/C/Dや2択・4択のテキスト）を貼り付けるだけで、このアプリで使える <code class="bg-slate-100 px-1 rounded">quiz_data</code> 形式のJSONに変換できます。
-              </p>
-              <p class="mt-2">対応形式：<span class="font-mono">{\"quiz_data\":[...]}</span> / <span class="font-mono">{\"items\":[...]}</span> / <span class="font-mono">[ ... ]</span> など</p>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-slate-700 mb-2">JSONデータ入力</label>
-              <textarea
-                id="json-input"
-                class="w-full h-64 p-4 font-mono text-sm bg-white text-slate-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-y shadow-sm"
-                placeholder='{"quiz_data": [... ]}'
-                spellcheck="false"
-              >${escapeHtml(state.jsonInput)}</textarea>
-            </div>
-
-            ${state.errorMessage ? `
-              <div class="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg animate-pulse">
-                <i data-lucide="alert-circle" width="20" height="20"></i>
-                <span class="text-sm font-medium">${escapeHtml(state.errorMessage)}</span>
-              </div>
-            ` : ''}
-
-            <button
-              onclick="handleStartQuiz()"
-              class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95 duration-200"
-            >
-              <i data-lucide="play" width="20" height="20"></i>
-              クイズを開始する
-            </button>
-
-            <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm">
-              <summary class="cursor-pointer font-semibold text-slate-700">対応JSONの例を見る</summary>
-              <div class="mt-3 space-y-3">
-                <div>
-                  <div class="font-semibold text-slate-700 mb-1">標準（quiz_data）</div>
-                  <pre class="bg-white border border-slate-200 rounded-lg p-3 overflow-auto"><code>${escapeHtml(sampleJson)}</code></pre>
-                </div>
-                <div>
-                  <div class="font-semibold text-slate-700 mb-1">GPT形式（items + q/choices/answerIndex + passage）</div>
-                  <pre class="bg-white border border-slate-200 rounded-lg p-3 overflow-auto"><code>${escapeHtml(sampleJson2)}</code></pre>
-                </div>
-              </div>
-            </details>
-          </div>
-        `;
-
-      } else if (state.gameState === 'playing' && state.quizData) {
-        const currentQ = state.quizData[state.currentQuestionIndex];
-        const progress = ((state.currentQuestionIndex + 1) / state.quizData.length) * 100;
-
-        const optionsHtml = state.currentShuffledOptions.map((option, idx) => {
-          let btnClass = "p-4 rounded-xl border-2 text-left transition-all duration-200 font-medium relative overflow-hidden flex justify-between items-center ";
-          let iconHtml = "";
-
-          if (state.showExplanation) {
-            if (option === currentQ.answer) {
-              btnClass += "bg-green-100 border-green-500 text-green-800 ring-2 ring-green-200";
-              iconHtml = `<i data-lucide="check-circle" class="text-green-600" width="20" height="20"></i>`;
-            } else if (option === state.selectedOption) {
-              btnClass += "bg-red-100 border-red-500 text-red-800";
-              iconHtml = `<i data-lucide="x-circle" class="text-red-600" width="20" height="20"></i>`;
-            } else {
-              btnClass += "bg-slate-50 border-slate-200 opacity-50";
-            }
-          } else {
-            btnClass += "bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md cursor-pointer active:scale-[0.98]";
-          }
-
-          const disabledAttr = state.showExplanation ? 'disabled' : '';
-
-          return `
-            <button
-              onclick="handleAnswerIndex(${idx})"
-              ${disabledAttr}
-              class="${btnClass}"
-            >
-              <span>${escapeHtml(option)}</span>
-              ${iconHtml}
-            </button>
-          `;
-        }).join('');
-
-        const gridClass = state.currentShuffledOptions.length > 3 ? 'md:grid-cols-2' : 'grid-cols-1';
-
-        mainHtml = `
-          <div class="space-y-6 p-6">
-            <div class="flex justify-between items-center text-sm text-slate-500 mb-2">
-              <span>Question ${state.currentQuestionIndex + 1} / ${state.quizData.length}</span>
-              <span>Score: ${state.score}</span>
-            </div>
-            <div class="w-full bg-slate-200 rounded-full h-2">
-              <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
-            </div>
-
-            ${currentQ.passage ? `
-              <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 leading-relaxed text-slate-700">
-                <div class="text-xs font-semibold text-slate-500 mb-2">本文</div>
-                <div>${escapeHtml(currentQ.passage)}</div>
-              </div>
-            ` : ''}
-
-            <h2 class="text-xl md:text-2xl font-bold text-slate-800 leading-relaxed py-2">
-              ${escapeHtml(currentQ.question)}
-            </h2>
-
-            <div class="grid gap-4 ${gridClass}">
-              ${optionsHtml}
-            </div>
-
-            ${state.showExplanation ? `
-              <div class="mt-6 bg-slate-100 rounded-lg p-5 border-l-4 border-indigo-500 animate-fade-in-up">
-                <h3 class="font-bold text-slate-700 mb-2 flex items-center gap-2">
-                  ${state.isCorrect
-                    ? '<span class="text-green-600">正解！</span>'
-                    : '<span class="text-red-600">残念...</span>'}
-                </h3>
-                <p class="text-slate-600 mb-3">
-                  <span class="font-bold">正解: </span>
-                  ${escapeHtml(currentQ.answer)}
-                </p>
-                ${currentQ.explanation ? `
-                  <p class="text-slate-700 leading-relaxed">${escapeHtml(currentQ.explanation)}</p>
-                ` : ''}
-
-                <div class="mt-4 flex justify-end">
-                  <button
-                    onclick="handleNext()"
-                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg flex items-center gap-2 shadow-lg transition-transform hover:-translate-y-0.5"
-                  >
-                    ${state.currentQuestionIndex + 1 === state.quizData.length ? "結果を見る" : "次の問題へ"}
-                    <i data-lucide="chevron-right" width="18" height="18"></i>
-                  </button>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-        `;
-
-      } else if (state.gameState === 'result') {
-        const percentage = Math.round((state.score / state.quizData.length) * 100);
-
-        mainHtml = `
-          <div class="p-6">
-            <div class="text-center py-10 space-y-6">
-              <div class="inline-flex items-center justify-center w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full mb-4">
-                <i data-lucide="check-circle" width="48" height="48"></i>
-              </div>
-              <h2 class="text-3xl font-bold text-slate-800">テスト終了！</h2>
-
-              <div class="text-5xl font-black text-indigo-600 my-4">
-                ${state.score} <span class="text-2xl text-slate-400 font-normal">/ ${state.quizData.length}</span>
-              </div>
-
-              <p class="text-slate-600">
-                ${state.score === state.quizData.length
-                  ? "全問正解！"
-                  : `正解率は ${percentage}% でした。`}
-              </p>
-
-              <div class="pt-8">
-                <button
-                  onclick="handleReset()"
-                  class="bg-lime-600 hover:bg-lime-700 text-white font-bold py-3 px-8 rounded-lg flex items-center gap-2 mx-auto transition-colors shadow-lg"
-                >
-                  <i data-lucide="refresh-cw" width="20" height="20"></i>
-                  別の問題を作る
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
+      if (!state.revealed && ["A","B","C","D"].includes(k)){
+        const idx = k.charCodeAt(0) - "A".charCodeAt(0);
+        const q = state.list[state.i];
+        if (q && idx >= 0 && idx < (q.options?.length ?? 0)) onPick(idx);
       }
 
-      app.innerHTML = headerHtml + mainHtml;
-      lucide.createIcons();
-
-      const textarea = document.getElementById('json-input');
-      if (textarea) {
-        textarea.addEventListener('input', handleInputChange);
+      if (e.key === " "){
+        e.preventDefault();
+        if (!revealBtn.disabled) reveal();
       }
-    }
 
-    // --- ユーティリティ ---
-    function escapeHtml(unsafe) {
-      if (typeof unsafe !== 'string') return unsafe;
-      return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
+      if (e.key === "Enter"){
+        if (!nextBtn.disabled) next();
+      }
+    });
 
-    // アプリケーション開始
-    init();
+    // 初期表示
+    render();
   </script>
 </body>
 </html>
